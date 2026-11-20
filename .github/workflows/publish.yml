@@ -47,7 +47,11 @@ jobs:
           fi
 
       - name: Add the site files
-        run: cp index.html config.js _site/
+        run: |
+          cp index.html config.js _site/
+          # A version tag on config.js so browsers never keep an old copy of your settings after a publish.
+          sed -i "s|<script src=\"config.js\"></script>|<script src=\"config.js?v=${GITHUB_SHA::8}\"></script>|" _site/index.html
+          grep -q "config.js?v=" _site/index.html
 
       # Supabase's free plan pauses a project after a week with no activity. A tiny read five times a day keeps it awake.
       - name: Keep the database awake
