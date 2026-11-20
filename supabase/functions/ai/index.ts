@@ -70,7 +70,8 @@ const CORS = {
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
+// Created on first use, so a missing key gives a clear answer instead of crashing the function.
+let anthropic: Anthropic | null = null;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -84,6 +85,10 @@ Deno.serve(async (req) => {
   if (!user) return reply({ error: "not_signed_in" }, 401);
   const allowed = Deno.env.get("ALLOWED_EMAIL");
   if (allowed && user.email?.toLowerCase() !== allowed.toLowerCase()) return reply({ error: "not_allowed" }, 403);
+
+  // No AI key yet: tell the page, which then saves what was typed as a quick note.
+  if (!Deno.env.get("ANTHROPIC_API_KEY")) return reply({ error: "not_configured" }, 503);
+  anthropic ??= new Anthropic(); // reads ANTHROPIC_API_KEY
 
   let body: { text?: unknown; context?: unknown };
   try { body = await req.json(); } catch { return reply({ error: "bad_request" }, 400); }

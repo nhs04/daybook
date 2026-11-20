@@ -970,7 +970,13 @@ async function askAssistant(text){
       out = await sampleFn.json(`${ASSIST_RULES}\n\nDaybook snapshot (JSON):\n${assistSnapshot()}\n\nWhat they wrote:\n"""${text}"""\n\n${ASSIST_FORMAT}`, { cache:false });
     } else {
       const { data, error } = await sb.functions.invoke('ai', { body: { text, context: assistSnapshot() } });
-      if (error) throw { code:'upstream_error' };
+      if (error) {
+        // No assistant set up on the website (no function, or no AI key yet): fall back to a quick add instead of failing.
+        const st = error.context && error.context.status;
+        if (st === 404 || error.name === 'FunctionsFetchError' || error.name === 'FunctionsRelayError') throw { code:'not_declared' };
+        let body = null; try { body = await error.context.json(); } catch {}
+        throw { code: (body && body.error) || 'upstream_error' };
+      }
       if (data && data.error) throw { code:data.error };
       out = data;
     }
@@ -978,10 +984,10 @@ async function askAssistant(text){
     S.assist = { status:'done', text, done, reply: done.length ? String(out?.reply || 'Done.').slice(0, 300) : 'I couldn’t find something to add in that. Try saying it another way.' };
   } catch (e) {
     const code = e && e.code;
-    if (['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].includes(code)) {
+    if (['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed','not_configured','not_allowed'].includes(code)) {
       S.aiDenied = true; S.assist = null;
       const p = parseQuick(text); if (!p.title) p.title = text; createTaskFrom(p);
-      toast('Added as a quick note. The assistant is turned off here.');
+      toast(backend === 'supabase' ? 'Added as a quick note.' : 'Added as a quick note. The assistant is turned off here.');
       render(); return;
     }
     S.assist = { status:'error', text, msg: code === 'rate_limited' ? 'The assistant is busy right now. Try again in a little while.' : 'That didn’t go through. Try again.' };
