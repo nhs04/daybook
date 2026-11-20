@@ -1,0 +1,92 @@
+# Publishes Daybook to GitHub Pages and refreshes the Jobs tab every morning.
+# In your repository: Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Publish Daybook
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "15 10,14,18,22,2 * * *" # five times a day: about 5 am, 9 am, 1 pm, 5 pm and 9 pm in New York (winter time)
+  workflow_dispatch: {} # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Fetch today's jobs
+        run: |
+          mkdir -p _site
+          if ! python3 scripts/update_jobs.py --out _site/jobs.json; then
+            echo "Job source unavailable today. Keeping yesterday's list."
+            curl -fsS "${{ steps.pages.outputs.base_url }}/jobs.json" -o _site/jobs.json || echo "No earlier list to keep."
+          fi
+
+      - name: Fetch this week's AI and cybersecurity news
+        run: |
+          if ! python3 scripts/update_news.py --out _site/news.json; then
+            echo "News feeds unavailable today. Keeping yesterday's stories."
+            curl -fsS "${{ steps.pages.outputs.base_url }}/news.json" -o _site/news.json || echo "No earlier stories to keep."
+          fi
+
+      - name: Add the site files
+        run: cp index.html config.js _site/
+
+      # Supabase's free plan pauses a project after a week with no activity. A tiny read five times a day keeps it awake.
+      - name: Keep the database awake
+        run: |
+          url=$(sed -n 's/.*supabaseUrl: *"\([^"]*\)".*/\1/p' config.js)
+          key=$(sed -n 's/.*supabaseAnonKey: *"\([^"]*\)".*/\1/p' config.js)
+          if [ -n "$url" ] && [ -n "$key" ]; then
+            curl -fsS "$url/rest/v1/items?select=id&limit=1" -H "apikey: $key" -H "Authorization: Bearer $key" -o /dev/null && echo "Database is awake." || echo "Couldn't reach the database this time."
+          else
+            echo "Supabase isn't set up yet. Skipping."
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # GitHub switches off daily schedules in repositories with no commits for 60 days.
+  # This adds an empty commit every ~45 quiet days so the morning refresh keeps running.
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep the daily refresh switched on
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( $(date +%s) - last )) -gt $(( 45 * 86400 )) ]; then
+            git config user.name "daybook-bot"
+            git config user.email "daybook-bot@users.noreply.github.com"
+            git commit --allow-empty -m "Keep Daybook's daily job refresh active"
+            git push
+          fi
