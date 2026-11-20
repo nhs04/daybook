@@ -97,11 +97,10 @@ Deno.serve(async (req) => {
   if (!text || !context || context.length > 80000) return reply({ error: "bad_request" }, 400);
 
   try {
-    const response = await anthropic.beta.messages.create({
-      model: "claude-opus-5-5",
+    // Claude Haiku 5.5: fast and very low cost, plenty for filing what you write into the right place.
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-5-5",
       max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
       output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
       system: RULES,
       messages: [{ role: "user", content: `Daybook snapshot (JSON):\n${context}\n\nWhat they wrote:\n"""${text}"""` }],

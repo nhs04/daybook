@@ -4,7 +4,7 @@ A calm planner for a PhD thesis, PhD applications, courses and emails. It opens 
 
 - **Front end:** one page (`index.html`) hosted free on GitHub Pages.
 - **Back end:** Supabase (free) stores your data behind a private email sign-in, and runs the AI function.
-- **AI:** `supabase/functions/ai` calls Claude with your Anthropic API key, which stays on the server.
+- **AI:** `supabase/functions/ai` calls Claude (Haiku 5.5) with your Anthropic API key, which stays on the server.
 
 Without any setup, the page still works and saves in your browser only.
 
@@ -25,7 +25,7 @@ Without any setup, the page still works and saves in your browser only.
 ### 3. Connect the page to the database
 
 1. In Supabase, open **Project Settings → API**.
-2. Copy the **Project URL** and the **anon public** key into `config.js`:
+2. Copy the **Project URL** (Project Settings → Data API) and the **anon public** key (Project Settings → API Keys → **Legacy API keys**, it starts with `eyJ`) into `config.js`:
 
    ```js
    window.DAYBOOK_CONFIG = {
@@ -57,7 +57,7 @@ From then on, the same workflow runs five times a day (about 5 am, 9 am, 1 pm, 5
 
 ### 7. Turn on the AI
 
-1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (pay as you go; everyday use of the assistant usually costs a few dollars a month at most).
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (prepaid credits; the assistant uses Claude Haiku 5.5, so everyday use is usually well under $1 a month, and $5 of credit lasts months).
 2. In Supabase, open **Edge Functions → Secrets** and add:
    - `ANTHROPIC_API_KEY`: your key
    - `ALLOWED_EMAIL`: the email you sign in with
@@ -77,7 +77,7 @@ From then on, the same workflow runs five times a day (about 5 am, 9 am, 1 pm, 5
      npx supabase functions deploy ai
      ```
 
-Reload your site. The input at the top turns into the assistant (it shows a small sparkle and a **Do it** button).
+Reload your site. The input at the top is now the assistant. Until the AI is set up, the same box still works as a quick add.
 
 ---
 
