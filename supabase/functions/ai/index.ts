@@ -15,18 +15,19 @@ The person writes what they want in plain words. Turn it into actions that put e
 Rules:
 - Only do what they asked. Never invent extra items they did not mention.
 - Use the ids from the snapshot ("ref") when they mean an existing university, chapter, course, task or email. Match names loosely ("harvard" is Harvard University).
-- Resolve dates like "friday", "tomorrow", "next week", "dec 4" from today's date and weekday in the snapshot. Dates are YYYY-MM-DD. Leave the date null if they gave none.
+- Resolve dates like "friday", "tomorrow", "next week", "dec 4" from today's date and weekday in the snapshot. Dates are YYYY-MM-DD. Leave the date as an empty string if they gave none.
 - Emails they need to write: add_email with the subject in "title", the recipient in "to", and a short polite draft in "body" only if they ask for one.
 - Things to do: add_task, with "place" = "apps" (university id in ref), "thesis" (chapter id in ref when it clearly fits one), "course" (course id in ref) or "none". Assignments, projects, exams, readings and meetings go in "kind" ("assignment", "project", "exam", "reading", "meeting").
 - New universities: add_application. New courses: add_course. New thesis chapters: add_chapter. Thesis title, supervisor or submission deadline: update_thesis.
 - Progress: "I submitted MIT" or "Harvard CV is done" is update_application (new "stage", or requirement names in "items"). "Chapter 2 is drafted" is update_chapter. "I finished X" is complete_task. "I sent the email to X" is mark_email_sent.
 - Dreams, goals, quotes and words for the vision board: add_pin with "kind" goal, quote or word, the words in "text", an optional author or note in "caption", and a university id in ref when the goal is about one.
 - Removing: delete_task, delete_email, delete_application, delete_chapter, delete_course or delete_pin, with the id in ref. Only remove what they clearly asked to remove; when they say "all" (for example "remove all my emails"), add one delete action per matching item.
-- Changing: update_task (new "title", "date", "priority", "notes" or "kind"), update_email ("title" is the subject, "to", "date", "body"), update_application ("university", "program", "date" is the deadline, "stage", requirement names done in "items"), update_chapter ("title", "status", "date"), update_course ("title" is the name, "code", "teacher", "when"). Always put the id in ref, and leave every field you are not changing as null. Use "none" as the date to remove a date.
+- Changing: update_task (new "title", "date", "priority", "notes" or "kind"), update_email ("title" is the subject, "to", "date", "body"), update_application ("university", "program", "date" is the deadline, "stage", requirement names done in "items"), update_chapter ("title", "status", "date"), update_course ("title" is the name, "code", "teacher", "when"). Always put the id in ref, and leave every field you are not changing empty ("" for text, 0 for priority, [] for items). Use "none" as the date to remove a date.
 - "reply" is one short, warm sentence saying what you did.`;
 
-const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
-const str = nullable({ type: "string" });
+// No nullable (union) fields: the API allows at most 16 of them in a schema. Empty values ("" / 0 / [])
+// mean "not given" and are turned back into null before the page sees them.
+const str = { type: "string" };
 
 const ACTION = {
   type: "object",
@@ -42,11 +43,11 @@ const ACTION = {
     },
     title: str, date: str, ref: str, to: str, body: str, notes: str, university: str, program: str,
     code: str, teacher: str, when: str, kind: str, text: str, caption: str, supervisor: str,
-    place: nullable({ type: "string", enum: ["thesis", "apps", "course", "none"] }),
-    stage: nullable({ type: "string", enum: ["research", "prep", "submitted", "interview", "decision"] }),
-    status: nullable({ type: "string", enum: ["todo", "outline", "draft", "revise", "done"] }),
-    priority: nullable({ type: "integer", enum: [1, 2, 3] }),
-    items: nullable({ type: "array", items: { type: "string" } }),
+    place: { type: "string", enum: ["thesis", "apps", "course", "none", ""] },
+    stage: { type: "string", enum: ["research", "prep", "submitted", "interview", "decision", ""] },
+    status: { type: "string", enum: ["todo", "outline", "draft", "revise", "done", ""] },
+    priority: { type: "integer", enum: [0, 1, 2, 3] },
+    items: { type: "array", items: { type: "string" } },
   },
   required: [
     "type", "title", "date", "ref", "to", "body", "notes", "university", "program", "code", "teacher", "when",
@@ -109,7 +110,13 @@ Deno.serve(async (req) => {
     if (response.stop_reason === "refusal") return reply({ reply: "I can’t help with that one.", actions: [] });
     const block = response.content.find((b) => b.type === "text");
     if (!block || block.type !== "text") return reply({ reply: "", actions: [] });
-    return reply(JSON.parse(block.text));
+    const out = JSON.parse(block.text);
+    const blank = (k: string, v: unknown) => v === "" || (k === "priority" && v === 0) || (Array.isArray(v) && v.length === 0);
+    if (Array.isArray(out.actions)) {
+      out.actions = out.actions.map((a: Record<string, unknown>) =>
+        Object.fromEntries(Object.entries(a).map(([k, v]) => [k, blank(k, v) ? null : v])));
+    }
+    return reply(out);
   } catch (error) {
     if (error instanceof Anthropic.RateLimitError) return reply({ error: "rate_limited" }, 429);
     if (error instanceof Anthropic.AuthenticationError) {
